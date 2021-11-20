@@ -20,9 +20,9 @@ def _loss_names(d):
 def config():
     exp_name = "vilt"
     seed = 0
-    datasets = ["coco", "vg", "sbu", "gcc"]
-    loss_names = _loss_names({"itm": 1, "mlm": 1})
-    batch_size = 4096  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
+    datasets = ["coco"]
+    loss_names = _loss_names({"mlm": 1})
+    batch_size = 32  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
 
     # Image setting
     train_transform_keys = ["pixelbert"]
@@ -71,12 +71,12 @@ def config():
     test_only = False
 
     # below params varies with the environment
-    data_root = ""
-    log_dir = "result"
-    per_gpu_batchsize = 0  # you should define this manually with per_gpu_batch_size=#
+    data_root = "/data/edward/data/"
+    log_dir = "/data/edward/checkpoints/"
+    per_gpu_batchsize = 4  # you should define this manually with per_gpu_batch_size=#
     num_gpus = 1
     num_nodes = 1
-    load_path = ""
+    load_path = "/data/edward/models/vilt_200k_mlm_itm.ckpt"
     num_workers = 8
     precision = 16
 

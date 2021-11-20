@@ -1,15 +1,15 @@
-from vilt.datasets import NLVR2Dataset
+from vilt.datasets import MemesDataset
 from .datamodule_base import BaseDataModule
 
 
-class NLVR2DataModule(BaseDataModule):
+class MemesDataModule(BaseDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     @property
     def dataset_cls(self):
-        return NLVR2Dataset
+        return MemesDataset
 
     @property
     def dataset_name(self):
-        return "nlvr2"
+        return "memes"

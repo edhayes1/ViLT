@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 
 from vilt.config import ex
 from vilt.modules import ViLTransformerSS
-from vilt.datamodules.multitask_datamodule import MTDataModule
+from vilt.datamodules.memes_datamodule import MemesDataModule
 
 
 @ex.automain
@@ -12,7 +12,7 @@ def main(_config):
     _config = copy.deepcopy(_config)
     pl.seed_everything(_config["seed"])
 
-    dm = MTDataModule(_config, dist=True)
+    dm = MemesDataModule(_config)
 
     model = ViLTransformerSS(_config)
     exp_name = f'{_config["exp_name"]}'
