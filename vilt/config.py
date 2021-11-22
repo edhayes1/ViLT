@@ -21,7 +21,7 @@ def config():
     exp_name = "vilt"
     seed = 0
     datasets = ["coco"]
-    loss_names = _loss_names({"mlm": 1})
+    loss_names = _loss_names({"mlm": 1, 'cl':1})
     batch_size = 32  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
 
     # Image setting
@@ -49,6 +49,10 @@ def config():
     num_layers = 12
     mlp_ratio = 4
     drop_rate = 0.1
+
+    # Contrastive Setting
+    temperature = 0.1
+    contrastive_dim = 64
 
     # Optimizer Setting
     optim_type = "adamw"

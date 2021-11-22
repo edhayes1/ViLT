@@ -4,4 +4,5 @@ from .f30k_caption_karpathy_dataset import F30KCaptionKarpathyDataset
 from .conceptual_caption_dataset import ConceptualCaptionDataset
 from .sbu_caption_dataset import SBUCaptionDataset
 from .vqav2_dataset import VQAv2Dataset
-from .memes_dataset import MemesDataset
+from .memes_dataset import MemesDataset, HatefulMemesDataset, FeaturesDataset
+

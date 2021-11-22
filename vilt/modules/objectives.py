@@ -6,6 +6,7 @@ import glob
 import json
 import tqdm
 import functools
+import math
 
 from torch.utils.data.distributed import DistributedSampler
 from einops import rearrange
@@ -87,10 +88,8 @@ def optimal_transport_dist(
     return distance
 
 
-def compute_mlm(pl_module, batch):
-    infer = pl_module.infer(batch, mask_text=True, mask_image=False)
-    mlm_logits = pl_module.mlm_score(infer["text_feats"])
-    mlm_labels = infer["text_labels"]
+def compute_mlm(pl_module, text_feats, mlm_labels):
+    mlm_logits = pl_module.mlm_score(text_feats)
 
     mlm_loss = F.cross_entropy(
         mlm_logits.view(-1, pl_module.hparams.config["vocab_size"]),
@@ -98,22 +97,53 @@ def compute_mlm(pl_module, batch):
         ignore_index=-100,
     )
 
-    ret = {
-        "mlm_loss": mlm_loss,
-        "mlm_logits": mlm_logits,
-        "mlm_labels": mlm_labels,
-        "mlm_ids": infer["text_ids"],
-    }
-
     phase = "train" if pl_module.training else "val"
-    loss = getattr(pl_module, f"{phase}_mlm_loss")(ret["mlm_loss"])
+    loss = getattr(pl_module, f"{phase}_mlm_loss")(mlm_loss)
     acc = getattr(pl_module, f"{phase}_mlm_accuracy")(
-        ret["mlm_logits"], ret["mlm_labels"]
+        mlm_logits, mlm_labels
     )
     pl_module.log(f"mlm/{phase}/loss", loss)
     pl_module.log(f"mlm/{phase}/accuracy", acc)
 
-    return ret
+    return mlm_loss
+
+def compute_cl(pl_module, feats_0, feats_1, eps=1e-6):
+    out_0 = pl_module.mlp(feats_0)
+    out_1 = pl_module.mlp(feats_1)
+
+    temperature = pl_module.temperature
+    out_0 = F.normalize(feats_0, dim=1)
+    out_1 = F.normalize(feats_1, dim=1)
+
+    if torch.distributed.is_available() and torch.distributed.is_initialized() and False:
+        out_1_dist = SyncFunction.apply(out_1)
+        out_2_dist = SyncFunction.apply(out_2)
+    else:
+        out_1_dist = out_0
+        out_2_dist = out_1
+
+    out = torch.cat([out_0, out_1], dim=0)
+    out_dist = torch.cat([out_1_dist, out_2_dist], dim=0)
+
+    cov = torch.mm(out, out_dist.t().contiguous())
+    sim = torch.exp(cov / temperature)
+    neg = sim.sum(dim=-1)
+
+    # from each row, subtract e^(1/temp) to remove similarity measure for x1.x1
+    row_sub = torch.Tensor(neg.shape).fill_(math.e ** (1 / temperature)).to(neg.device)
+    neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
+
+    # Positive similarity, pos becomes [2 * batch_size]
+    pos = torch.exp(torch.sum(out_0 * out_1, dim=-1) / temperature)
+    pos = torch.cat([pos, pos], dim=0)
+
+    loss = -torch.log(pos / (neg + eps)).mean()
+
+    pl_module.log(f"Contrastive/loss", loss)
+    # pl_module.log(f"Contrastive/accuracy", acc)
+
+    return loss
+
 
 
 def compute_mpp(pl_module, batch):

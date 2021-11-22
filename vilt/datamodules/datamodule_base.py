@@ -64,7 +64,7 @@ class BaseDataModule(LightningDataModule):
         self.setup_flag = False
 
     def set_train_dataset(self):
-        self.train_dataset = MemesDataset(
+        self.train_dataset = self.dataset_cls(
             self.data_dir,
             self.train_transform_keys,
             split="train",
@@ -73,7 +73,7 @@ class BaseDataModule(LightningDataModule):
         )
 
     def set_val_dataset(self):
-        self.val_dataset = MemesDataset(
+        self.val_dataset = self.dataset_cls(
             self.data_dir,
             self.val_transform_keys,
             split="val",

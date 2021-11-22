@@ -3,9 +3,10 @@ import copy
 import pytorch_lightning as pl
 
 from vilt.config import ex
-from vilt.modules import ViLTransformerSS
+from vilt.modules import MMCL
 from vilt.datamodules.memes_datamodule import MemesDataModule
-
+from vilt.datamodules.hateful_memes_datamodule import HatefulMemesDataModule
+from vilt.callbacks.hate_online_eval import HateOnlineEvaluator
 
 @ex.automain
 def main(_config):
@@ -14,10 +15,16 @@ def main(_config):
 
     dm = MemesDataModule(_config)
 
-    model = ViLTransformerSS(_config)
+    model = MMCL(_config)
     exp_name = f'{_config["exp_name"]}'
 
     os.makedirs(_config["log_dir"], exist_ok=True)
+
+    logger = pl.loggers.TensorBoardLogger(
+        _config["log_dir"],
+        name=f'{exp_name}_seed{_config["seed"]}_from_{_config["load_path"].split("/")[-1][:-5]}',
+    )
+
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=1,
         verbose=True,
@@ -25,13 +32,12 @@ def main(_config):
         mode="max",
         save_last=True,
     )
-    logger = pl.loggers.TensorBoardLogger(
-        _config["log_dir"],
-        name=f'{exp_name}_seed{_config["seed"]}_from_{_config["load_path"].split("/")[-1][:-5]}',
-    )
-
     lr_callback = pl.callbacks.LearningRateMonitor(logging_interval="step")
-    callbacks = [checkpoint_callback, lr_callback]
+
+    h_dm = HatefulMemesDataModule(_config)
+    hm_callback = HateOnlineEvaluator(h_dm)
+
+    callbacks = [checkpoint_callback, lr_callback, hm_callback]
 
     num_gpus = (
         _config["num_gpus"]

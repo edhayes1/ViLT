@@ -5,6 +5,19 @@ import torch.nn.functional as F
 from transformers.models.bert.modeling_bert import BertPredictionHeadTransform
 
 
+class LinearModel(nn.Module):
+    def __init__(self, dim):
+        super(LinearModel, self).__init__()
+        self.classifier = nn.Linear(dim, 1)
+        self.bce = nn.BCEWithLogitsLoss()
+    
+    def forward(self, feats, labels):
+        output = self.classifier(feats)
+        loss = self.bce(output, labels.unsqueeze(1)) if labels is not None else None
+
+        return output, loss
+
+
 class Pooler(nn.Module):
     def __init__(self, hidden_size):
         super().__init__()
@@ -18,13 +31,18 @@ class Pooler(nn.Module):
         return pooled_output
 
 
-class ITMHead(nn.Module):
-    def __init__(self, hidden_size):
+class MLPHead(nn.Module):
+    def __init__(self, hidden_size, output_size):
         super().__init__()
-        self.fc = nn.Linear(hidden_size, 2)
+        self.cls = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, output_size),
+            )
 
     def forward(self, x):
-        x = self.fc(x)
+        x = self.cls(x)
         return x
 
 
@@ -40,16 +58,4 @@ class MLMHead(nn.Module):
     def forward(self, x):
         x = self.transform(x)
         x = self.decoder(x) + self.bias
-        return x
-
-
-class MPPHead(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.transform = BertPredictionHeadTransform(config)
-        self.decoder = nn.Linear(config.hidden_size, 256 * 3)
-
-    def forward(self, x):
-        x = self.transform(x)
-        x = self.decoder(x)
         return x

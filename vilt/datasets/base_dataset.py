@@ -15,7 +15,8 @@ class BaseDataset(torch.utils.data.Dataset):
         data_dir: str,
         transform_keys: list,
         image_size: int,
-        max_text_len=20
+        max_text_len=20,
+        img_dir: str = '/data/edward/images/dir_001/'
     ):
         """
         data_dir : where dataset file *.arrow lives; existence should be guaranteed via DataModule.prepare_data
@@ -30,8 +31,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.image_size = image_size
         self.max_text_len = max_text_len
         self.data_dir = data_dir
-        self.img_dir = '/data/edward/images/dir_001/'
-        self.data_dir = '/data/edward/data/'
+        self.img_dir = img_dir
 
         self.instances, self.all_texts = self.read_data(self.img_dir, self.data_dir)
     
@@ -52,9 +52,19 @@ class BaseDataset(torch.utils.data.Dataset):
                 if fname.lower().endswith('json'):
                     id = fname[:-5]  # remove extension to get it's unique ID
                     with open(data_dir + fname) as f:
+                        d = {}
                         data = json.load(f)
+
                         if id in instances:
-                            text_data[id] = " ".join(entry['text'] for entry in data['text_data'])
+                            d['text_data'] = " ".join(entry['text'] for entry in data['text_data'])
+
+                            if 'src_transcript' in data:
+                                d['text_data'] = data['src_transcript']
+                            
+                            if 'labels' in data:
+                                d['labels'] = data['labels']
+
+                            text_data[id] = d
 
         return instances, text_data
 
@@ -65,23 +75,47 @@ class BaseDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.instances)
 
-    def get_image(self, id):
+    def get_image(self, id, views=True):
         path = self.img_dir + id
         image = Image.open(path).convert("RGB")
-        image_tensor = self.transforms(image)
-        return image_tensor
 
-    def get_text(self, id):
+        if views:
+            return self.transforms(image), self.transforms(image)
+
+        return self.transforms(image)
+    
+    def split_text(self, text):
+        text = text.split()
+        if len(text) <= 2:
+            t1, t2 = text, ""
+        else:
+            random_split = random.randrange(1, len(text)-1)
+            t1 = [" ".join(text[:random_split])]
+            t2 = [" ".join(text[random_split:])]
+
+        return t1, t2
+    
+    def tokenise(self, text):
+        return self.tokenizer(
+                text,
+                padding="max_length",
+                truncation=True,
+                max_length=self.max_text_len,
+                return_special_tokens_mask=True,
+            )
+
+    def get_text(self, id, split=True):
 
         text = self.all_texts[id]
-        encoding = self.tokenizer(
-            text,
-            padding="max_length",
-            truncation=True,
-            max_length=self.max_text_len,
-            return_special_tokens_mask=True,
-        )
-        return (text, encoding)
+        if not split:
+            e = self.tokenise(text)
+            return (text, e)
+
+        t1, t2 = self.split_text(text)
+        e1 = self.tokenise(t1)
+        e2 = self.tokenise(t2)
+        
+        return [(t1, e1), (t2, e2)]
 
     def collate(self, batch):
         batch_size = len(batch)
