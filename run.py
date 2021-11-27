@@ -7,6 +7,7 @@ from vilt.modules import MMCL
 from vilt.datamodules.memes_datamodule import MemesDataModule
 from vilt.datamodules.hateful_memes_datamodule import HatefulMemesDataModule
 from vilt.callbacks.hate_online_eval import HateOnlineEvaluator
+from pytorch_lightning.profiler import AdvancedProfiler
 
 @ex.automain
 def main(_config):
@@ -28,7 +29,7 @@ def main(_config):
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=1,
         verbose=True,
-        monitor="val/the_metric",
+        monitor="Contrastive/loss",
         mode="max",
         save_last=True,
     )
@@ -37,7 +38,7 @@ def main(_config):
     h_dm = HatefulMemesDataModule(_config)
     hm_callback = HateOnlineEvaluator(h_dm)
 
-    callbacks = [checkpoint_callback, lr_callback, hm_callback]
+    callbacks = [checkpoint_callback, lr_callback]
 
     num_gpus = (
         _config["num_gpus"]
@@ -48,9 +49,11 @@ def main(_config):
     grad_steps = _config["batch_size"] // (
         _config["per_gpu_batchsize"] * num_gpus * _config["num_nodes"]
     )
+    print(grad_steps)
 
-    max_steps = _config["max_steps"] if _config["max_steps"] is not None else None
-
+    max_steps = 100 #_config["max_steps"] if _config["max_steps"] is not None else None
+    profiler = AdvancedProfiler(output_filename='profile.txt')
+    
     trainer = pl.Trainer(
         gpus=_config["num_gpus"],
         num_nodes=_config["num_nodes"],
@@ -71,6 +74,7 @@ def main(_config):
         weights_summary="top",
         fast_dev_run=_config["fast_dev_run"],
         val_check_interval=_config["val_check_interval"],
+        profiler=profiler
     )
 
     if not _config["test_only"]:

@@ -50,8 +50,20 @@ class MMCL(pl.LightningModule):
         self.mlp = heads.MLPHead(config["hidden_size"], self.contrastive_dim)
         self.mlp.apply(objectives.init_weights)
 
-        self.lin_cls = heads.LinearClassifier(config["hidden_size"])
-        self.lin_cls.apply(objectives.init_weights)
+        for param in self.transformer.blocks[:10].parameters():
+            param.requires_grad = False
+
+        for param in self.text_embeddings.parameters():
+            param.requires_grad = False
+
+        for param in self.token_type_embeddings.parameters():
+            param.requires_grad = False
+
+        for param in self.transformer.patch_embed.parameters():
+            param.requires_grad = False
+
+        self.transformer.cls_token.requires_grad = False
+        self.transformer.pos_embed.requires_grad = False
 
         # ===================== Downstream ===================== #
         if (
@@ -77,13 +89,14 @@ class MMCL(pl.LightningModule):
         img, text_ids, text_masks,
         image_token_type_idx=1,
         image_masks=None,
+        max_image_len=-1
     ):
 
         text_embeds = self.text_embeddings(text_ids)
 
         image_embeds, image_masks, _, _ = self.transformer.visual_embed(
                 img,
-                max_image_len=self.hparams.config["max_image_len"],
+                max_image_len=max_image_len,
                 mask_it=False,
             )
 
@@ -125,8 +138,8 @@ class MMCL(pl.LightningModule):
         text_masks_0 = batch['text_0_masks']
         text_masks_1 = batch['text_1_masks']
 
-        ret_0 = self.infer(img_0, text_ids_0, text_masks_0) 
-        ret_1 = self.infer(img_1, text_ids_1, text_masks_1)
+        ret_0 = self.infer(img_0, text_ids_0, text_masks_0, max_image_len=self.hparams.config["max_image_len"]) 
+        ret_1 = self.infer(img_1, text_ids_1, text_masks_1, max_image_len=self.hparams.config["max_image_len"])
 
         ret = {}
 

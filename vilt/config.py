@@ -22,13 +22,13 @@ def config():
     seed = 0
     datasets = ["coco"]
     loss_names = _loss_names({"mlm": 1, 'cl':1})
-    batch_size = 32  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
+    batch_size = 128  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
 
     # Image setting
     train_transform_keys = ["pixelbert"]
     val_transform_keys = ["pixelbert"]
     image_size = 384
-    max_image_len = -1
+    max_image_len = 200
     patch_size = 32
     draw_false_image = 1
     image_only = False
@@ -75,10 +75,11 @@ def config():
     test_only = False
 
     # below params varies with the environment
-    data_root = "/data/edward/data/"
+    data_root = "/data/edward/pretrain/"
+    img_root = '/data/edward/pretrain/'
     log_dir = "/data/edward/checkpoints/"
-    per_gpu_batchsize = 4  # you should define this manually with per_gpu_batch_size=#
-    num_gpus = 1
+    per_gpu_batchsize = 16  # you should define this manually with per_gpu_batch_size=#
+    num_gpus = 8
     num_nodes = 1
     load_path = "/data/edward/models/vilt_200k_mlm_itm.ckpt"
     num_workers = 8

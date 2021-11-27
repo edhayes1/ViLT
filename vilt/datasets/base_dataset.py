@@ -15,8 +15,7 @@ class BaseDataset(torch.utils.data.Dataset):
         data_dir: str,
         transform_keys: list,
         image_size: int,
-        max_text_len=20,
-        img_dir: str = '/data/edward/images/dir_001/'
+        max_text_len=20
     ):
         """
         data_dir : where dataset file *.arrow lives; existence should be guaranteed via DataModule.prepare_data
@@ -31,40 +30,32 @@ class BaseDataset(torch.utils.data.Dataset):
         self.image_size = image_size
         self.max_text_len = max_text_len
         self.data_dir = data_dir
-        self.img_dir = img_dir
 
-        self.instances, self.all_texts = self.read_data(self.img_dir, self.data_dir)
+        self.instances, self.all_texts = self.read_data()
     
-    def read_data(self, img_dir, data_dir):
+    def read_data(self):
         instances = []
         text_data = {}
 
-        img_dir = os.path.expanduser(img_dir)
-        for root, _, fnames in os.walk(img_dir, followlinks=True):
-            for fname in fnames:
-                instances.append(fname)
-                if len(instances) > 500:
-                    break
-
-        data_dir = os.path.expanduser(data_dir)
+        data_dir = os.path.expanduser(self.data_dir)
         for root, _, fnames in os.walk(data_dir, followlinks=True):
             for fname in fnames:
                 if fname.lower().endswith('json'):
-                    id = fname[:-5]  # remove extension to get it's unique ID
+                    id = fname[:-5]
+                    instances.append(id)
                     with open(data_dir + fname) as f:
                         d = {}
                         data = json.load(f)
+                        d['text_data'] = " ".join(entry['text'] for entry in data['text_data'])
 
-                        if id in instances:
-                            d['text_data'] = " ".join(entry['text'] for entry in data['text_data'])
+                        if 'src_transcript' in data:
+                            d['text_data'] = data['src_transcript']
+                        
+                        if 'label' in data:
+                            d['label'] = data['label']
 
-                            if 'src_transcript' in data:
-                                d['text_data'] = data['src_transcript']
+                        text_data[id] = d
                             
-                            if 'labels' in data:
-                                d['labels'] = data['labels']
-
-                            text_data[id] = d
 
         return instances, text_data
 
@@ -76,22 +67,23 @@ class BaseDataset(torch.utils.data.Dataset):
         return len(self.instances)
 
     def get_image(self, id, views=True):
-        path = self.img_dir + id
+        path = self.data_dir + id
         image = Image.open(path).convert("RGB")
+        image = self.transforms(image)
 
         if views:
-            return self.transforms(image), self.transforms(image)
+            return image, image
 
-        return self.transforms(image)
+        return image
     
     def split_text(self, text):
         text = text.split()
         if len(text) <= 2:
-            t1, t2 = text, ""
+            t1, t2 = " ".join(text), ""
         else:
             random_split = random.randrange(1, len(text)-1)
-            t1 = [" ".join(text[:random_split])]
-            t2 = [" ".join(text[random_split:])]
+            t1 = " ".join(text[:random_split])
+            t2 = " ".join(text[random_split:])
 
         return t1, t2
     
@@ -106,7 +98,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
     def get_text(self, id, split=True):
 
-        text = self.all_texts[id]
+        text = self.all_texts[id]['text_data']
         if not split:
             e = self.tokenise(text)
             return (text, e)

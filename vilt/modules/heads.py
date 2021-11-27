@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from transformers.models.bert.modeling_bert import BertPredictionHeadTransform
 
 
-class LinearModel(nn.Module):
+class LinearHead(nn.Module):
     def __init__(self, dim):
-        super(LinearModel, self).__init__()
+        super(LinearHead, self).__init__()
         self.classifier = nn.Linear(dim, 1)
         self.bce = nn.BCEWithLogitsLoss()
     
