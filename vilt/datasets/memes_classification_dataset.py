@@ -16,7 +16,7 @@ class MemesClassificationDataset(torch.utils.data.Dataset):
         data_dir: str,
         transform_keys: list,
         image_size: int,
-        max_text_len=20
+        max_text_len=40
     ):
         """
         data_dir : where dataset file *.arrow lives; existence should be guaranteed via DataModule.prepare_data

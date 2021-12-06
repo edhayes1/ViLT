@@ -88,6 +88,7 @@ def make_arrow(root, dataset_root, split=False):
     dataframe = pd.DataFrame(
         [b for b in bs if b[0] is not None], columns=["image", "texts", "image_id"],
     )
+
     if split:
         train_data = dataframe.head(n=len(dataframe) - 4000)
         val_data = dataframe.tail(n=4000)
@@ -102,4 +103,4 @@ def make_arrow(root, dataset_root, split=False):
 
 
 
-make_arrow('/data/edward/hateful_memes/vilt_train/', '/data/edward/')
+make_arrow('/data/edward/pretrain/', '/data/edward/', split=True)

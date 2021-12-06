@@ -28,7 +28,7 @@ def config():
     train_transform_keys = ["pixelbert"]
     val_transform_keys = ["pixelbert"]
     image_size = 192
-    max_image_len = 12
+    max_image_len = 14
     patch_size = 32
     draw_false_image = 1
     image_only = False
@@ -51,9 +51,9 @@ def config():
     drop_rate = 0.1
 
     # Contrastive Setting
-    temperature = 0.1
-    contrastive_dim = 64
-    mixup_sample = [20.0, 3.0]
+    temperature = 0.5
+    contrastive_dim = 96
+    mixup_sample = [15.0, 3.0]
 
     # Optimizer Setting
     optim_type = "adamw"
