@@ -1,4 +1,5 @@
 from typing import Optional, Sequence, Tuple, Union
+from pytorch_lightning.loggers.base import rank_zero_experiment
 
 import torch
 from pytorch_lightning import Callback, LightningModule, Trainer
@@ -16,25 +17,19 @@ from tqdm import tqdm
 from vilt.modules import heads, objectives
 
 
-class HateOnlineEvaluator(Callback):  # pragma: no cover
+class OnlineEvaluator(Callback):  # pragma: no cover
 
     def __init__(
         self,
         data_module: LightningDataModule,
+        name = 'Classification'
     ):
-        """
-        Args:
-            dataset: if stl10, need to get the labeled batch
-            drop_p: Dropout probability
-            hidden_dim: Hidden dimension for the fine-tune MLP
-            z_dim: Representation dimension
-            num_classes: Number of classes
-        """
         super().__init__()
         data_module.setup()
 
         self.train_dataloader = data_module.train_dataloader()
         self.test_dataloader = data_module.val_dataloader()
+        self.name = name
 
     def get_feats_loader(self, pl_module, loader):
         pl_module.eval()
@@ -66,8 +61,7 @@ class HateOnlineEvaluator(Callback):  # pragma: no cover
         
         return dataloader
 
-
-    def on_validation_epoch_end(
+    def on_validation_start(
         self,
         trainer: Trainer,
         pl_module: LightningModule,
@@ -95,7 +89,6 @@ class HateOnlineEvaluator(Callback):  # pragma: no cover
                         batch = tuple(t.to(device=pl_module.device, non_blocking=True) for t in batch)
                         feats, labels = batch
                         _, loss = lin_cls(feats, labels)
-                        # loss.requires_grad = True
 
                         loss.backward()
                         optimizer.step()
@@ -111,10 +104,13 @@ class HateOnlineEvaluator(Callback):  # pragma: no cover
 
         # log metrics
         # print(praucs)
-        print(np.array(praucs).mean())
-        pl_module.log("online_train_acc", np.array(accuracies).mean(), on_epoch=True)
-        pl_module.log("online_train_auc", np.array(aucrocs).mean(), on_epoch=True)
-        pl_module.log("online_train_prc", np.array(praucs).mean(), on_epoch=True)
+        # print(np.array(praucs).mean())
+        print(np.array(praucs).mean(), np.array(aucrocs).mean(), np.array(accuracies).mean())
+        pl_module.log(f'{self.name}/pr_auc', np.array(praucs).mean(), sync_dist=False, rank_zero_only=True)
+        pl_module.log(f'{self.name}/auroc', np.array(aucrocs).mean(), sync_dist=False, rank_zero_only=True)
+        pl_module.log(f'{self.name}/accuracy', np.array(accuracies).mean(), sync_dist=False, rank_zero_only=True)
+        del train_feats_loader
+        del test_feats_loader
     
     
 

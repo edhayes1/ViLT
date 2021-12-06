@@ -9,7 +9,7 @@ from transformers import (
     DataCollatorWithPadding
 )
 
-from vilt.datasets.hateful_memes_dataset import HatefulMemesDataset
+from vilt.datasets.memes_classification_dataset import MemesClassificationDataset
 
 
 
@@ -25,17 +25,18 @@ def get_pretrained_tokenizer(from_pretrained):
     )
 
 
-class HatefulMemesDataModule(LightningDataModule):
-    def __init__(self, _config, data_dir=None):
+class MemesClassificationDataModule(LightningDataModule):
+    def __init__(self, _config, data_dir='', split_names=['train', 'val']):
         super().__init__()
 
-        self.data_dir = '/data/edward/hateful_memes/'
+        self.data_dir = data_dir
+        self.split_names = split_names
 
         self.num_workers = _config["num_workers"]
         self.batch_size = _config["per_gpu_batchsize"]
         self.eval_batch_size = self.batch_size
 
-        self.image_size = _config["image_size"]
+        self.image_size = 384
         self.max_text_len = 20
 
         self.train_transform_keys = (
@@ -60,19 +61,17 @@ class HatefulMemesDataModule(LightningDataModule):
         self.setup_flag = False
 
     def set_train_dataset(self):
-        self.train_dataset = HatefulMemesDataset(
-            self.data_dir,
+        self.train_dataset = MemesClassificationDataset(
+            self.data_dir + self.split_names[0],
             self.train_transform_keys,
-            split="train",
             image_size=self.image_size,
             max_text_len=self.max_text_len
         )
 
     def set_val_dataset(self):
-        self.val_dataset = HatefulMemesDataset(
-            self.data_dir,
+        self.val_dataset = MemesClassificationDataset(
+            self.data_dir + self.split_names[1],
             self.val_transform_keys,
-            split="val",
             image_size=self.image_size,
             max_text_len=self.max_text_len,
         )
@@ -93,7 +92,7 @@ class HatefulMemesDataModule(LightningDataModule):
     def train_dataloader(self):
         loader = DataLoader(
             self.train_dataset,
-            batch_size=self.batch_size,
+            batch_size=128,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -104,7 +103,7 @@ class HatefulMemesDataModule(LightningDataModule):
     def val_dataloader(self):
         loader = DataLoader(
             self.val_dataset,
-            batch_size=self.eval_batch_size,
+            batch_size=128,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,

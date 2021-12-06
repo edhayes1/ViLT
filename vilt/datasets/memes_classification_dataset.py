@@ -6,17 +6,17 @@ import os
 import json
 
 from PIL import Image
-from vilt.transforms.pixelbert import pixelbert_transform
+from vilt.transforms.pixelbert import pixelbert_transform, precomputed_transform
 
 
-class HatefulMemesDataset(torch.utils.data.Dataset):
+
+class MemesClassificationDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         data_dir: str,
         transform_keys: list,
         image_size: int,
-        max_text_len=20,
-        split=''
+        max_text_len=20
     ):
         """
         data_dir : where dataset file *.arrow lives; existence should be guaranteed via DataModule.prepare_data
@@ -25,11 +25,7 @@ class HatefulMemesDataset(torch.utils.data.Dataset):
         """
         assert len(transform_keys) >= 1
         super().__init__()
-
-        assert split in ["train", "val"]
-        self.split = split
-        data_dir = data_dir + 'vilt_train/' if split == 'train' else data_dir + 'vilt_test/'
-
+        
         self.transforms = pixelbert_transform(image_size)
 
         self.image_size = image_size

@@ -26,6 +26,7 @@ def get_pretrained_tokenizer(from_pretrained):
 class BaseDataModule(LightningDataModule):
     def __init__(self, _config, data_dir=None):
         super().__init__()
+        self.prepare_data_per_node=False
 
         self.data_dir = _config["data_root"] if data_dir is None else data_dir
 
@@ -34,7 +35,7 @@ class BaseDataModule(LightningDataModule):
         self.eval_batch_size = self.batch_size
 
         self.image_size = _config["image_size"]
-        self.max_text_len = _config["max_text_len"]
+        self.max_text_len = 20
 
         self.train_transform_keys = (
             ["default_train"]
@@ -65,7 +66,7 @@ class BaseDataModule(LightningDataModule):
 
     def setup(self, stage):
         if not self.setup_flag:
-            self.pretraining_dataset = self.dataset_cls(
+            self.train_dataset = self.dataset_cls(
                 self.data_dir,
                 self.train_transform_keys,
                 split="train",
@@ -73,32 +74,39 @@ class BaseDataModule(LightningDataModule):
                 max_text_len=self.max_text_len
             )
 
-            self.train_indices, self.val_indices = torch.utils.data.random_split(list(range(len(self.pretraining_dataset))), 
-                                                                        [len(self.pretraining_dataset)-2000, 2000])
+            self.val_dataset = self.dataset_cls(
+                self.data_dir,
+                self.val_transform_keys,
+                split="val",
+                image_size=self.image_size,
+                max_text_len=self.max_text_len
+            )
 
-            self.pretraining_dataset.tokenizer = self.tokenizer
-            self.pretraining_dataset.mlm_collator = self.mlm_collator
+            self.train_dataset.tokenizer = self.tokenizer
+            self.train_dataset.mlm_collator = self.mlm_collator
+            self.val_dataset.tokenizer = self.tokenizer
+            self.val_dataset.mlm_collator = self.mlm_collator
 
             self.setup_flag = True
 
     def train_dataloader(self):
         loader = DataLoader(
-            self.pretraining_dataset,
+            self.train_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            collate_fn=self.pretraining_dataset.collate,
-            sampler=SubsetRandomSampler(self.train_indices)
+            collate_fn=self.train_dataset.collate,
+            drop_last=True
         )
         return loader
 
     def val_dataloader(self):
         loader = DataLoader(
-            self.pretraining_dataset,
+            self.val_dataset,
             batch_size=self.eval_batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            collate_fn=self.pretraining_dataset.collate,
-            sampler=SubsetRandomSampler(self.val_indices)
+            collate_fn=self.val_dataset.collate,
+            drop_last=True
         )
         return loader

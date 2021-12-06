@@ -1,5 +1,5 @@
 import torch
-from pytorch_lightning.metrics import Metric
+from torchmetrics import Metric
 
 
 class Accuracy(Metric):
@@ -33,6 +33,7 @@ class Scalar(Metric):
         super().__init__(dist_sync_on_step=dist_sync_on_step)
         self.add_state("scalar", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.updated = False
 
     def update(self, scalar):
         if isinstance(scalar, torch.Tensor):
@@ -41,6 +42,7 @@ class Scalar(Metric):
             scalar = torch.tensor(scalar).float().to(self.scalar.device)
         self.scalar += scalar
         self.total += 1
+        self.updated = True
 
     def compute(self):
         return self.scalar / self.total

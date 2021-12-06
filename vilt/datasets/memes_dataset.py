@@ -5,9 +5,7 @@ import random
 
 
 class MemesDataset(BaseDataset):
-    def __init__(self, *args, split="", **kwargs):
-        assert split in ["train", "val", "test"]
-        self.split = split
+    def __init__(self, *args, **kwargs):
 
         super().__init__(
             *args,
@@ -15,10 +13,8 @@ class MemesDataset(BaseDataset):
         )
 
     def __getitem__(self, index):
-
-        id = self.instances[index]
-        image_tensor_0, image_tensor_1 = self.get_image(id)
-        text_0, text_1 = self.get_text(id)
+        image_tensor_0, image_tensor_1 = self.get_image(index)
+        text_0, text_1 = self.get_text(index)
 
         return {
             "image_0": image_tensor_0,

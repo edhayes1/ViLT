@@ -22,13 +22,13 @@ def config():
     seed = 0
     datasets = ["coco"]
     loss_names = _loss_names({"mlm": 1, 'cl':1})
-    batch_size = 128  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
+    batch_size = 1024  # this is a desired batch size; pl trainer will accumulate gradients when per step batch is smaller.
 
     # Image setting
     train_transform_keys = ["pixelbert"]
     val_transform_keys = ["pixelbert"]
-    image_size = 384
-    max_image_len = 200
+    image_size = 192
+    max_image_len = 12
     patch_size = 32
     draw_false_image = 1
     image_only = False
@@ -53,14 +53,15 @@ def config():
     # Contrastive Setting
     temperature = 0.1
     contrastive_dim = 64
+    mixup_sample = [20.0, 3.0]
 
     # Optimizer Setting
     optim_type = "adamw"
-    learning_rate = 1e-4
+    learning_rate = 1e-5
     weight_decay = 0.01
     decay_power = 1
-    max_epoch = 100
-    max_steps = 25000
+    max_epoch = 1000
+    max_steps = 50000
     warmup_steps = 2500
     end_lr = 0
     lr_mult = 1  # multiply lr for downstream heads
@@ -71,14 +72,14 @@ def config():
     # PL Trainer Setting
     resume_from = None
     fast_dev_run = False
-    val_check_interval = 1.0
+    val_check_interval = 0.5
     test_only = False
 
     # below params varies with the environment
-    data_root = "/data/edward/pretrain/"
+    data_root = "/data/edward/"
     img_root = '/data/edward/pretrain/'
     log_dir = "/data/edward/checkpoints/"
-    per_gpu_batchsize = 16  # you should define this manually with per_gpu_batch_size=#
+    per_gpu_batchsize = 128  # you should define this manually with per_gpu_batch_size=#
     num_gpus = 8
     num_nodes = 1
     load_path = "/data/edward/models/vilt_200k_mlm_itm.ckpt"

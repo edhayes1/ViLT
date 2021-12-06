@@ -40,7 +40,6 @@ def set_metrics(pl_module):
                 setattr(pl_module, f"{split}_{k}_accuracy", Accuracy())
                 setattr(pl_module, f"{split}_{k}_loss", Scalar())
 
-
 def epoch_wrapup(pl_module):
     phase = "train" if pl_module.training else "val"
     the_metric = 0

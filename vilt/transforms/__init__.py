@@ -1,10 +1,12 @@
 from .pixelbert import (
     pixelbert_transform,
     pixelbert_transform_randaug,
+    precomputed_transform
 )
 
 _transforms = {
     "pixelbert": pixelbert_transform,
+    "precomputed": precomputed_transform,
     "pixelbert_randaug": pixelbert_transform_randaug,
 }
 

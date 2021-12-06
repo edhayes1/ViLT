@@ -4,4 +4,4 @@ from .conceptual_caption_dataset import ConceptualCaptionDataset
 from .sbu_caption_dataset import SBUCaptionDataset
 from .vqav2_dataset import VQAv2Dataset
 from .memes_dataset import MemesDataset
-from .hateful_memes_dataset import HatefulMemesDataset, FeaturesDataset
+from .memes_classification_dataset import MemesClassificationDataset, FeaturesDataset

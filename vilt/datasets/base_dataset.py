@@ -4,9 +4,10 @@ import io
 import pyarrow as pa
 import os
 import json
+import numpy as np
 
 from PIL import Image
-from vilt.transforms.pixelbert import pixelbert_transform
+from vilt.transforms.pixelbert import pixelbert_transform, precomputed_transform
 
 
 class BaseDataset(torch.utils.data.Dataset):
@@ -15,7 +16,8 @@ class BaseDataset(torch.utils.data.Dataset):
         data_dir: str,
         transform_keys: list,
         image_size: int,
-        max_text_len=20
+        max_text_len=20,
+        split='train'
     ):
         """
         data_dir : where dataset file *.arrow lives; existence should be guaranteed via DataModule.prepare_data
@@ -25,56 +27,36 @@ class BaseDataset(torch.utils.data.Dataset):
         assert len(transform_keys) >= 1
         super().__init__()
 
-        self.transforms = pixelbert_transform(image_size)
+        self.transforms = precomputed_transform()
 
         self.image_size = image_size
         self.max_text_len = max_text_len
         self.data_dir = data_dir
 
-        self.instances, self.all_texts = self.read_data()
-    
-    def read_data(self):
-        instances = []
-        text_data = {}
+        self.table = pa.ipc.RecordBatchFileReader(
+            pa.memory_map(f"{data_dir}/pretrain_{split}_192.arrow", "r")).read_all()
 
-        data_dir = os.path.expanduser(self.data_dir)
-        for root, _, fnames in os.walk(data_dir, followlinks=True):
-            for fname in fnames:
-                if fname.lower().endswith('json'):
-                    id = fname[:-5]
-                    instances.append(id)
-                    with open(data_dir + fname) as f:
-                        d = {}
-                        data = json.load(f)
-                        d['text_data'] = " ".join(entry['text'] for entry in data['text_data'])
+        if split == 'train':
+            hateful_memes_table = pa.ipc.RecordBatchFileReader(
+                pa.memory_map(f"{data_dir}/pretrain_hate_192.arrow", "r")).read_all()
 
-                        if 'src_transcript' in data:
-                            d['text_data'] = data['src_transcript']
-                        
-                        if 'label' in data:
-                            d['label'] = data['label']
+            self.table = pa.concat_tables([self.table, hateful_memes_table], promote=True)
 
-                        text_data[id] = d
-                            
-
-        return instances, text_data
-
-    @property
-    def corpus(self):
-        return [text for texts in self.all_texts for text in texts]
-
+        self.all_texts = self.table['texts']
+        
     def __len__(self):
-        return len(self.instances)
+        return len(self.all_texts)
 
-    def get_image(self, id, views=True):
-        path = self.data_dir + id
-        image = Image.open(path).convert("RGB")
-        image = self.transforms(image)
+    def get_image(self, index):
+        image_bytes = io.BytesIO(self.table['image'][index].as_py())
+        image_bytes.seek(0)
+        image = Image.open(image_bytes).convert("RGB")
+        image = np.array(image)
+        image_0 = self.transforms(image=image)["image"]
+        image_1 = self.transforms(image=image)["image"]
+        # return torch.rand_like(image_0), torch.rand_like(image_1)
 
-        if views:
-            return image, image
-
-        return image
+        return image_0, image_1
     
     def split_text(self, text):
         text = text.split()
@@ -98,7 +80,7 @@ class BaseDataset(torch.utils.data.Dataset):
 
     def get_text(self, id, split=True):
 
-        text = self.all_texts[id]['text_data']
+        text = " ".join(self.all_texts[id].as_py())
         if not split:
             e = self.tokenise(text)
             return (text, e)
@@ -112,13 +94,14 @@ class BaseDataset(torch.utils.data.Dataset):
     def collate(self, batch):
         batch_size = len(batch)
         keys = set([key for b in batch for key in b.keys()])
-        dict_batch = {k: [dic[k] if k in dic else None for dic in batch] for k in keys}
+        batch = {k: [dic[k] if k in dic else None for dic in batch] for k in keys}
+        ret = {}
 
-        img_keys = [k for k in list(dict_batch.keys()) if "image" in k]
+        img_keys = ['image_0', 'image_1']
         img_sizes = list()
 
         for img_key in img_keys:
-            img = dict_batch[img_key]
+            img = batch[img_key]
             img_sizes += [i.shape for i in img if i is not None]
 
         for size in img_sizes:
@@ -131,7 +114,7 @@ class BaseDataset(torch.utils.data.Dataset):
             max_width = max([i[2] for i in img_sizes])
 
         for img_key in img_keys:
-            img = dict_batch[img_key]
+            img = batch[img_key]
 
             new_images = [
                 torch.zeros(batch_size, 3, max_height, max_width)
@@ -141,43 +124,36 @@ class BaseDataset(torch.utils.data.Dataset):
                 orig = img[bi]
                 new_images[0][bi, :, : orig.shape[1], : orig.shape[2]] = orig
 
-            dict_batch[img_key] = new_images
+            ret[img_key] = new_images
 
-        txt_keys = [k for k in list(dict_batch.keys()) if "text" in k]
+        txt_keys = ['text_0', 'text_1']
 
         if len(txt_keys) != 0:
-            texts = [[d[0] for d in dict_batch[txt_key]] for txt_key in txt_keys]
-            encodings = [[d[1] for d in dict_batch[txt_key]] for txt_key in txt_keys]
-            draw_text_len = len(encodings)
+            # texts = [[d[0] for d in dict_batch[txt_key]] for txt_key in txt_keys]
+            encodings = [[d[1] for d in batch[txt_key]] for txt_key in txt_keys]
             flatten_encodings = [e for encoding in encodings for e in encoding]
             flatten_mlms = self.mlm_collator(flatten_encodings)
 
             for i, txt_key in enumerate(txt_keys):
                 texts, encodings = (
-                    [d[0] for d in dict_batch[txt_key]],
-                    [d[1] for d in dict_batch[txt_key]],
+                    [d[0] for d in batch[txt_key]],
+                    [d[1] for d in batch[txt_key]],
                 )
 
-                mlm_ids, mlm_labels = (
+                input_ids, mlm_labels = (
                     flatten_mlms["input_ids"][batch_size * (i) : batch_size * (i + 1)],
                     flatten_mlms["labels"][batch_size * (i) : batch_size * (i + 1)],
                 )
 
-                input_ids = torch.zeros_like(mlm_ids)
-                attention_mask = torch.zeros_like(mlm_ids)
+                attention_mask = torch.zeros_like(input_ids)
                 for _i, encoding in enumerate(encodings):
-                    _input_ids, _attention_mask = (
-                        torch.tensor(encoding["input_ids"]),
-                        torch.tensor(encoding["attention_mask"]),
-                    )
-                    input_ids[_i, : len(_input_ids)] = _input_ids
+                    _attention_mask = torch.tensor(encoding["attention_mask"])
                     attention_mask[_i, : len(_attention_mask)] = _attention_mask
 
-                dict_batch[txt_key] = texts
-                dict_batch[f"{txt_key}_ids"] = input_ids
-                dict_batch[f"{txt_key}_labels"] = torch.full_like(input_ids, -100)
-                dict_batch[f"{txt_key}_ids_mlm"] = mlm_ids
-                dict_batch[f"{txt_key}_labels_mlm"] = mlm_labels
-                dict_batch[f"{txt_key}_masks"] = attention_mask
+                # dict_batch[txt_key] = texts
+                ret[f"{txt_key}_labels"] = torch.full_like(input_ids, -100)
+                ret[f"{txt_key}_ids_mlm"] = input_ids
+                ret[f"{txt_key}_labels_mlm"] = mlm_labels
+                ret[f"{txt_key}_masks"] = attention_mask
 
-        return dict_batch
+        return ret

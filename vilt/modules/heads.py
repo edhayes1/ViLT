@@ -34,7 +34,11 @@ class Pooler(nn.Module):
 class MLPHead(nn.Module):
     def __init__(self, hidden_size, output_size):
         super().__init__()
+        self.dropout = nn.Dropout(0.3)
         self.cls = nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.BatchNorm1d(hidden_size),
+                nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
                 nn.BatchNorm1d(hidden_size),
                 nn.ReLU(),
@@ -42,6 +46,7 @@ class MLPHead(nn.Module):
             )
 
     def forward(self, x):
+        x = self.dropout(x)
         x = self.cls(x)
         return x
 

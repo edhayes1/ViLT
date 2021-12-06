@@ -5,6 +5,7 @@ import vilt.modules.vision_transformer as vit
 
 from transformers.models.bert.modeling_bert import BertConfig, BertEmbeddings
 from vilt.modules import heads, objectives, vilt_utils
+import torch.distributions as td
 
 
 class MMCL(pl.LightningModule):
@@ -50,20 +51,23 @@ class MMCL(pl.LightningModule):
         self.mlp = heads.MLPHead(config["hidden_size"], self.contrastive_dim)
         self.mlp.apply(objectives.init_weights)
 
-        for param in self.transformer.blocks[:10].parameters():
-            param.requires_grad = False
+        mixup_params = self.hparams.config["mixup_sample"]
+        self.beta = td.Beta(torch.tensor([mixup_params[0]]), torch.tensor([mixup_params[1]]))
 
-        for param in self.text_embeddings.parameters():
-            param.requires_grad = False
+        # for param in self.transformer.blocks[:6].parameters():
+        #     param.requires_grad = False
 
-        for param in self.token_type_embeddings.parameters():
-            param.requires_grad = False
+        # for param in self.text_embeddings.parameters():
+        #     param.requires_grad = False
 
-        for param in self.transformer.patch_embed.parameters():
-            param.requires_grad = False
+        # for param in self.token_type_embeddings.parameters():
+        #     param.requires_grad = False
 
-        self.transformer.cls_token.requires_grad = False
-        self.transformer.pos_embed.requires_grad = False
+        # for param in self.transformer.patch_embed.parameters():
+        #     param.requires_grad = False
+
+        # self.transformer.cls_token.requires_grad = False
+        # self.transformer.pos_embed.requires_grad = False
 
         # ===================== Downstream ===================== #
         if (
@@ -89,10 +93,18 @@ class MMCL(pl.LightningModule):
         img, text_ids, text_masks,
         image_token_type_idx=1,
         image_masks=None,
-        max_image_len=-1
+        max_image_len=-1,
+        mixup=False
     ):
 
         text_embeds = self.text_embeddings(text_ids)
+        if mixup:
+            N = text_embeds.shape[0]
+            lam = self.beta.sample((N, 1)).to(self.device)
+            index = torch.randperm(N, device=self.device)
+            
+            text_embeds = lam * text_embeds + (1.0 - lam) * text_embeds[index]
+            text_masks = torch.max(text_masks, text_masks[index])
 
         image_embeds, image_masks, _, _ = self.transformer.visual_embed(
                 img,
@@ -137,9 +149,9 @@ class MMCL(pl.LightningModule):
         text_labels_1 = batch['text_1_labels_mlm']
         text_masks_0 = batch['text_0_masks']
         text_masks_1 = batch['text_1_masks']
-
-        ret_0 = self.infer(img_0, text_ids_0, text_masks_0, max_image_len=self.hparams.config["max_image_len"]) 
-        ret_1 = self.infer(img_1, text_ids_1, text_masks_1, max_image_len=self.hparams.config["max_image_len"])
+        
+        ret_0 = self.infer(img_0, text_ids_0, text_masks_0, max_image_len=self.hparams.config["max_image_len"], mixup=True) 
+        ret_1 = self.infer(img_1, text_ids_1, text_masks_1, max_image_len=self.hparams.config["max_image_len"], mixup=True)
 
         ret = {}
 

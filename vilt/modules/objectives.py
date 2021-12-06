@@ -107,6 +107,28 @@ def compute_mlm(pl_module, text_feats, mlm_labels):
 
     return mlm_loss
 
+class SyncFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, tensor):
+        ctx.batch_size = tensor.shape[0]
+
+        gathered_tensor = [torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())]
+
+        torch.distributed.all_gather(gathered_tensor, tensor)
+        gathered_tensor = torch.cat(gathered_tensor, 0)
+
+        return gathered_tensor
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input = grad_output.clone()
+        torch.distributed.all_reduce(grad_input, op=torch.distributed.ReduceOp.SUM, async_op=False)
+
+        idx_from = torch.distributed.get_rank() * ctx.batch_size
+        idx_to = (torch.distributed.get_rank() + 1) * ctx.batch_size
+        return grad_input[idx_from:idx_to]
+
+
 def compute_cl(pl_module, feats_0, feats_1, eps=1e-6):
     out_0 = pl_module.mlp(feats_0)
     out_1 = pl_module.mlp(feats_1)
@@ -115,32 +137,42 @@ def compute_cl(pl_module, feats_0, feats_1, eps=1e-6):
     out_0 = F.normalize(feats_0, dim=1)
     out_1 = F.normalize(feats_1, dim=1)
 
-    if torch.distributed.is_available() and torch.distributed.is_initialized() and False:
-        out_1_dist = SyncFunction.apply(out_1)
-        out_2_dist = SyncFunction.apply(out_2)
-    else:
-        out_1_dist = out_0
-        out_2_dist = out_1
+    # if torch.distributed.is_available() and torch.distributed.is_initialized() and False:
+    #     out_0_dist = SyncFunction.apply(out_0)
+    #     out_1_dist = SyncFunction.apply(out_1)
+    # else:
+    #     out_0_dist = out_0
+    #     out_1_dist = out_1
 
-    out = torch.cat([out_0, out_1], dim=0)
-    out_dist = torch.cat([out_1_dist, out_2_dist], dim=0)
+    # out = torch.cat([out_0, out_1], dim=0)
+    # out_dist = torch.cat([out_0_dist, out_1_dist], dim=0)
 
-    cov = torch.mm(out, out_dist.t().contiguous())
-    sim = torch.exp(cov / temperature)
-    neg = sim.sum(dim=-1)
+    # cov = torch.mm(out, out_dist.t().contiguous())
+    # sim = torch.exp(cov / temperature)
+    # neg = sim.sum(dim=-1)
 
-    # from each row, subtract e^(1/temp) to remove similarity measure for x1.x1
-    row_sub = torch.Tensor(neg.shape).fill_(math.e ** (1 / temperature)).to(neg.device)
-    neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
+    # # from each row, subtract e^(1/temp) to remove similarity measure for x1.x1
+    # # row_sub = torch.Tensor(neg.shape, device=neg.device).fill_(math.e ** (1 / temperature))
+    # row_sub = torch.full_like(neg, math.e ** (1 / temperature))
+    # neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
 
-    # Positive similarity, pos becomes [2 * batch_size]
-    pos = torch.exp(torch.sum(out_0 * out_1, dim=-1) / temperature)
-    pos = torch.cat([pos, pos], dim=0)
+    # # Positive similarity, pos becomes [2 * batch_size]
+    # pos = torch.exp(torch.sum(out_0 * out_1, dim=-1) / temperature)
+    # pos = torch.cat([pos, pos], dim=0)
 
-    loss = -torch.log(pos / (neg + eps)).mean()
+    # loss = -torch.log(pos / (neg + eps)).mean()
+
+    # Einstein sum is more intuitive
+    logits = torch.einsum('nc,mc->nm', [out_0, out_1]) / temperature
+    N = logits.shape[0]  # batch size per GPU
+    labels = (torch.arange(N, dtype=torch.long, device=logits.device))
+    loss = nn.CrossEntropyLoss()(logits, labels) * (2 * temperature)
+
+    preds = torch.argmax(logits, dim=1)
+    accuracy = (preds == labels).float().mean()
 
     pl_module.log(f"Contrastive/loss", loss)
-    # pl_module.log(f"Contrastive/accuracy", acc)
+    pl_module.log(f"Contrastive/accuracy", accuracy)
 
     return loss
 

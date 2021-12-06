@@ -587,7 +587,7 @@ class VisionTransformer(nn.Module):
         patch_index = (
             torch.stack(
                 torch.meshgrid(
-                    torch.arange(x_mask.shape[-2]), torch.arange(x_mask.shape[-1])
+                    torch.arange(x_mask.shape[-2], device=_x.device), torch.arange(x_mask.shape[-1], device=_x.device)
                 ),
                 dim=-1,
             )[None, None, :, :, :]
@@ -629,11 +629,11 @@ class VisionTransformer(nn.Module):
         select = list()
         for i, (v, nv, p) in enumerate(zip(valid_nums, non_valid_nums, pad_nums)):
             if p <= 0:
-                valid_choice = torch.multinomial(torch.ones(v).float(), max_image_len)
+                valid_choice = torch.multinomial(torch.ones(v, device=_x.device, dtype=torch.float32), max_image_len)
                 select.append(valid_row_idx[i][valid_choice])
             else:
                 pad_choice = torch.multinomial(
-                    torch.ones(nv).float(), p, replacement=True
+                    torch.ones(nv, device=_x.device, dtype=torch.float32), p, replacement=True
                 )
                 select.append(
                     torch.cat(
