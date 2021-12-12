@@ -54,21 +54,6 @@ class MMCL(pl.LightningModule):
         mixup_params = self.hparams.config["mixup_sample"]
         self.beta = td.Beta(torch.tensor([mixup_params[0]]), torch.tensor([mixup_params[1]]))
 
-        # for param in self.transformer.blocks[:6].parameters():
-        #     param.requires_grad = False
-
-        # for param in self.text_embeddings.parameters():
-        #     param.requires_grad = False
-
-        # for param in self.token_type_embeddings.parameters():
-        #     param.requires_grad = False
-
-        # for param in self.transformer.patch_embed.parameters():
-        #     param.requires_grad = False
-
-        # self.transformer.cls_token.requires_grad = False
-        # self.transformer.pos_embed.requires_grad = False
-
         # ===================== Downstream ===================== #
         if (
             self.hparams.config["load_path"] != ""
@@ -87,6 +72,15 @@ class MMCL(pl.LightningModule):
             ckpt = torch.load(self.hparams.config["load_path"], map_location="cpu")
             state_dict = ckpt["state_dict"]
             self.load_state_dict(state_dict, strict=False)
+
+    def create_cross_negatives(self, img_0, text_ids_0, text_masks_0):
+        # creates 2 representations of mismatched modalities
+        N = img_0.shape[0]
+        with torch.no_grad():
+            index = torch.roll(torch.arange(N, device=img_0.device), 1, 0)
+            ret_0 = self.infer(img_0, text_ids_0[index], text_masks_0[index], max_image_len=self.hparams.config["max_image_len"], mixup=False)['cls_feats']
+        negatives = torch.stack([ret_0, torch.roll(ret_0, -1, 0)], dim=1)
+        return negatives
     
     def infer(
         self,
@@ -162,7 +156,8 @@ class MMCL(pl.LightningModule):
 
         # Contrastive Learning
         if "cl" in self.current_tasks:
-            ret['cl_loss'] = objectives.compute_cl(self, ret_0['cls_feats'], ret_1['cls_feats'])
+            cross_negatives = self.create_cross_negatives(img_0, text_ids_0, text_masks_0)
+            ret['cl_loss'] = objectives.compute_cl(self, ret_0['cls_feats'], ret_1['cls_feats'], cross_negatives=cross_negatives)
 
         return ret
 

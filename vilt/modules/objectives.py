@@ -129,40 +129,16 @@ class SyncFunction(torch.autograd.Function):
         return grad_input[idx_from:idx_to]
 
 
-def compute_cl(pl_module, feats_0, feats_1, eps=1e-6):
+def compute_cl(pl_module, feats_0, feats_1, cross_negatives=None, eps=1e-6):
     out_0 = pl_module.mlp(feats_0)
     out_1 = pl_module.mlp(feats_1)
+    
+    out_0 = F.normalize(out_0, dim=1)
+    out_1 = F.normalize(out_1, dim=1)
 
     temperature = pl_module.temperature
-    out_0 = F.normalize(feats_0, dim=1)
-    out_1 = F.normalize(feats_1, dim=1)
 
-    # if torch.distributed.is_available() and torch.distributed.is_initialized() and False:
-    #     out_0_dist = SyncFunction.apply(out_0)
-    #     out_1_dist = SyncFunction.apply(out_1)
-    # else:
-    #     out_0_dist = out_0
-    #     out_1_dist = out_1
-
-    # out = torch.cat([out_0, out_1], dim=0)
-    # out_dist = torch.cat([out_0_dist, out_1_dist], dim=0)
-
-    # cov = torch.mm(out, out_dist.t().contiguous())
-    # sim = torch.exp(cov / temperature)
-    # neg = sim.sum(dim=-1)
-
-    # # from each row, subtract e^(1/temp) to remove similarity measure for x1.x1
-    # # row_sub = torch.Tensor(neg.shape, device=neg.device).fill_(math.e ** (1 / temperature))
-    # row_sub = torch.full_like(neg, math.e ** (1 / temperature))
-    # neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
-
-    # # Positive similarity, pos becomes [2 * batch_size]
-    # pos = torch.exp(torch.sum(out_0 * out_1, dim=-1) / temperature)
-    # pos = torch.cat([pos, pos], dim=0)
-
-    # loss = -torch.log(pos / (neg + eps)).mean()
-
-    # Einstein sum is more intuitive
+    # standard pairwise contrastive loss
     logits = torch.einsum('nc,mc->nm', [out_0, out_1]) / temperature
     N = logits.shape[0]  # batch size per GPU
     labels = (torch.arange(N, dtype=torch.long, device=logits.device))
@@ -173,6 +149,20 @@ def compute_cl(pl_module, feats_0, feats_1, eps=1e-6):
 
     pl_module.log(f"Contrastive/loss", loss)
     pl_module.log(f"Contrastive/accuracy", accuracy)
+
+    # cross modal contrastive loss
+    if cross_negatives is not None:
+        with torch.no_grad():
+            cross_negatives = pl_module.mlp(cross_negatives.view(2*N, -1)).view(N, 2, -1)
+        
+        cross_negatives = F.normalize(cross_negatives, dim=2)
+        queries = torch.cat([out_1.unsqueeze(1), cross_negatives], dim=1)
+        logits = torch.einsum('ij, ikj -> ik', out_0, queries) / temperature
+        labels = torch.zeros(N, dtype=torch.long, device=logits.device)
+        cm_loss = nn.CrossEntropyLoss()(logits, labels) * (2 * temperature)
+
+        pl_module.log(f"Contrastive/cm_loss", cm_loss)
+        loss += 3 * cm_loss
 
     return loss
 

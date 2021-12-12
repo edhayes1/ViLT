@@ -37,7 +37,7 @@ class MemesClassificationDataModule(LightningDataModule):
         self.eval_batch_size = self.batch_size
 
         self.image_size = 384
-        self.max_text_len = 40
+        self.max_text_len = 30
 
         self.train_transform_keys = (
             ["default_train"]

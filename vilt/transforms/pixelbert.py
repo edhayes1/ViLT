@@ -24,9 +24,9 @@ def precomputed_transform():
             A.RandomResizedCrop(192, 192, scale=(0.08, 0.5)),
             A.HorizontalFlip(p=0.5),
             A.ColorJitter(0.8, 0.8, 0.4, 0.2, p=0.8),
-            A.ToGray(p=0.2),
-            A.GaussianBlur(sigma_limit=[.1, 2.], p=0.2),
-            A.Solarize(p=0.2),
+            A.ToGray(p=0.3),
+            A.GaussianBlur(sigma_limit=[.1, 2.], p=0.3),
+            A.Solarize(p=0.3),
             A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ToTensorV2()
         ]
